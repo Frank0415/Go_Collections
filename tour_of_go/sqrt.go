@@ -37,5 +37,3 @@ func OS() {
 		fmt.Printf("%s.", os)
 	}
 }
-
-func myappend(vs... int)

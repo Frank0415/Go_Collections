@@ -7,10 +7,6 @@ func main() {
 	b := 2.1
 	var c, max = 20, 30
 
-	for i := 1; i <= 10; i++ {
-		c += int(b)
-	}
-
 	var d int64 = int64(c) // type conversions are explicit
 	fmt.Printf("Hello,%d %f %10d %d Arch Linux!\n", a, b, d, max)
 	var x, y = Sqrt(12.3)
@@ -22,6 +18,8 @@ func main() {
 	var s []int = primes[1:4]
 	fmt.Println(s)
 
+	OS()
+
 	s1 := []struct {
 		i int
 		b bool
@@ -31,4 +29,14 @@ func main() {
 		{5, true},
 	}
 	fmt.Println(s1)
+
+	var a_map = map[string]int{
+		"A": 1,
+		"B": 2,
+		"C": 3,
+	}
+
+	fmt.Println(a_map["B"])
+
+	fmt.Println(WordCount("What the fuck is the that"))
 }
