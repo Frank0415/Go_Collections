@@ -39,4 +39,6 @@ func main() {
 	fmt.Println(a_map["B"])
 
 	fmt.Println(WordCount("What the fuck is the that"))
+
+	Fibonacci_test()
 }
