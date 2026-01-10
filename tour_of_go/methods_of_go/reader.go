@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -18,13 +19,12 @@ func (mr MyReader) Read(buf []byte) (int, error) {
 func A_reader() {
 	var r = MyReader{}
 
-	for i := range(10){
+	for i := range 10 {
 		b := make([]byte, i+1)
-		n,_ := r.Read(b)
-		fmt.Printf("%q\n",b[:n])
+		n, _ := r.Read(b)
+		fmt.Printf("%q\n", b[:n])
 	}
-	
-	
+
 }
 
 func Strings_reader() {
@@ -39,4 +39,33 @@ func Strings_reader() {
 			break
 		}
 	}
+}
+
+type rot13Reader struct {
+	r io.Reader
+}
+
+func (rR rot13Reader) Read(buf []byte) (int, error) {
+	n, err := rR.r.Read(buf)
+	if err != nil {
+		return n, err
+	}
+
+	for i := range n {
+		b := buf[i]
+		switch {
+		case (b >= 'A' && b <= 'M') || (b >= 'a' && b <= 'm'):
+			buf[i] += 13
+		case (b >= 'N' && b <= 'Z') || (b >= 'n' && b <= 'z'):
+			buf[i] -= 13
+		default:
+		}
+	}
+	return n, nil
+}
+
+func Test_rot() {
+	s := strings.NewReader("Lbh penpxrq gur pbqr!")
+	r := rot13Reader{s}
+	io.Copy(os.Stderr,&r)
 }
