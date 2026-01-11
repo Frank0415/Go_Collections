@@ -13,7 +13,7 @@ type T struct {
 	S string
 }
 
-func (t *T) String() string {
+func (t T) String() string {
 	return fmt.Sprintf("What is %s?", t.S)
 }
 
@@ -65,6 +65,24 @@ func main() {
 
 	// f = i.(float64) // panic
 	// fmt.Println(f)
+
+	Ip_main()
+
+	Do(21)
+	Do("hello")
+	Do(3 + 4i)
+
+	if err := Run(); err != nil {
+		fmt.Println(err)
+	}
+
+	fmt.Println(Sqrt(2))
+	fmt.Println(Sqrt(-2))
+	Strings_reader()
+	A_reader()
+	Test_rot()
+	fmt.Println()
+	Img()
 }
 
 func describe(i I) {
