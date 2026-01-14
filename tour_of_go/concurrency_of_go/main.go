@@ -2,13 +2,19 @@ package main
 
 import (
 	"fmt"
-	"time"
+	"sync"
 )
+
+func runBackground(wg *sync.WaitGroup, fn func()) {
+    wg.Go(func() {
+        fn()
+    })
+}
 
 func say(s string) {
 	ctr := 0
-	for range 500 {
-		time.Sleep(time.Millisecond)
+	for range 10 {
+		// time.Sleep(time.Millisecond)
 		// fmt.Println(s)
 		fmt.Println(s, " ", ctr)
 		ctr++
@@ -17,7 +23,11 @@ func say(s string) {
 }
 
 func main() {
-	go say("goroutine 1")
-	go say("goroutine 2")
-	say("goroutine main")
+	var wg sync.WaitGroup
+	
+    runBackground(&wg, func() { say("goroutine 1") })
+    runBackground(&wg, func() { say("goroutine 2") })
+    runBackground(&wg, func() { Fib_run() })
+
+	wg.Wait()
 }
