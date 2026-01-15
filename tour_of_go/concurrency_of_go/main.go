@@ -30,4 +30,8 @@ func main() {
     runBackground(&wg, func() { Fib_run() })
 
 	wg.Wait()
+
+	Mutex_run()
+
+	Crawl_run()
 }
