@@ -30,6 +30,7 @@ func GetInterest(InterestFile *string) (map[string]bool, int) {
 		return InterestMap, 0
 	} else {
 		fmt.Println("Found", i, "interested items.")
+		fmt.Println()
 		return InterestMap, i
 	}
 }
@@ -38,6 +39,9 @@ func parseLine(line string, InterestMap *map[string]bool) (*Entry, bool) {
 	var dataPart, commentPart string
 	hashIdx := strings.Index(line, "#")
 	if hashIdx != -1 {
+		dataPart = line[:hashIdx]
+		commentPart = strings.TrimSpace(line[hashIdx+1:])
+	} else if hashIdx = strings.Index(line, "(Unspecified)"); hashIdx != -1 {
 		dataPart = line[:hashIdx]
 		commentPart = strings.TrimSpace(line[hashIdx+1:])
 	} else {
