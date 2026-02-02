@@ -1,11 +1,13 @@
 package tcp
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"net"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 )
 
 func bindPort(port int) (*net.TCPListener, error) {
@@ -23,79 +25,120 @@ func bindPort(port int) (*net.TCPListener, error) {
 	return nil, fmt.Errorf("could not bind to any port in range %d-%d", port, port+99)
 }
 
-func handleTCPConnection(conn net.Conn) {
-	defer conn.Close()
-
-	var mainBuf []byte
-	buf := make([]byte, 1024)
-
-	for {
-		n, err := conn.Read(buf)
-		if err != nil {
-			if err == io.EOF {
-				log.Println("Connection closed by client")
-				if len(mainBuf) > 0 {
-					log.Printf("Connection Closed with remaining %q", mainBuf)
-				}
-			} else {
-				log.Println("Read error:", err)
-			}
-			return
-		}
-
-		log.Printf("Received data: %s", string(buf[:n]))
-		if len(mainBuf)+n > 1024*1024 { // 1MB
-			log.Println("Message too long, closing connection")
-			return
-		}
-		mainBuf = append(mainBuf, buf[:n]...)
-
-		for {
-			index := bytes.IndexByte(mainBuf, '\n')
-			if index == -1 {
-				break
-			}
-			line := mainBuf[:index+1]
-			data := bytes.TrimRight(line, "\r\n")
-			conn.Write([]byte("Echo: " + string(data) + "\n"))
-
-			remaining := len(mainBuf) - (index + 1)
-			if remaining > 0 {
-				copy(mainBuf, mainBuf[index+1:])
-				mainBuf = mainBuf[:remaining]
-			} else {
-				mainBuf = mainBuf[:0]
-			}
-
-			if cap(mainBuf) > len(mainBuf)*4 && cap(mainBuf) > 1024 {
-				tmp := make([]byte, len(mainBuf))
-				copy(tmp, mainBuf)
-				mainBuf = tmp
-			}
-
-		}
-		if len(mainBuf) > 1024*1024 { // 1MB
-			log.Println("Message too long, closing connection")
-			return
-		}
-	}
-}
-
 func StartTCPServer() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
 	listener, err := bindPort(10000)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer listener.Close()
 
+	sem := make(chan struct{}, 100)
+	var wg sync.WaitGroup
+
 	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Println("Accept error:", err)
-			continue
+		log.Println("Head of 'for' loop")
+		select {
+		case <-sigChan:
+			log.Println("Shutting down TCP server, waiting all connections to close.")
+			listener.Close()
+			wg.Wait()
+			log.Println("All connections closed, TCP server exited.")
+			return
+		default:
+			conn, err := listener.Accept()
+			if err != nil {
+				// 如果是关闭了 listener 导致的报错，说明是正常退出
+				select {
+				case <-sigChan:
+					// wg.Wait()
+					// log.Println("All connections closed, TCP server exited.")
+					return
+				default:
+					log.Println("Accept error:", err)
+					continue
+				}
+			}
+			select {
+			case sem <- struct{}{}:
+				wg.Add(1)
+				go func() {
+					defer func() { <-sem }()
+					defer wg.Done()
+					handleTCPConnection(conn)
+				}()
+			default:
+				conn.Write([]byte("Server busy, try again later.\n"))
+				conn.Close()
+			}
 		}
-
-		go handleTCPConnection(conn)
 	}
-
 }
+
+	/*
+	0.1版本：
+		设计的时候的一个想法是用
+			done := make(chan struct{})
+
+			go func() {
+				<-sigChan
+				log.Println("Shutting down TCP server, waiting all connections to close.")
+				close(done)
+				listener.Close()
+			}()
+		然后再在后面的函数里面接受这个done然后再去用这个done来控制退出，
+		比如说handleTCPConnection里面也接受这个done然后退出
+
+		但是由于一开始做的初始化的问题，还是先做一个简单的版本，
+		直接在这个循环里面用这个sigchan，也免得需要把主循环套在goroutine里面
+
+	0.2版本：
+		for {
+		log.Println("Head of 'for' loop")
+		select {
+		case <-sigChan:
+			log.Println("Shutting down TCP server, waiting all connections to close.")
+			listener.Close()
+			wg.Wait()
+			log.Println("All connections closed, TCP server exited.")
+			return
+		default:
+			conn, err := listener.Accept()
+			if err != nil {
+				// 如果是关闭了 listener 导致的报错，说明是正常退出
+				select {
+				case <-sigChan:
+					// wg.Wait()
+					// log.Println("All connections closed, TCP server exited.")
+					return
+				default:
+					log.Println("Accept error:", err)
+					continue
+				}
+			}
+			select {
+			case sem <- struct{}{}:
+				wg.Add(1)
+				go func() {
+					defer func() { <-sem }()
+					defer wg.Done()
+					handleTCPConnection(conn)
+				}()
+			default:
+				conn.Write([]byte("Server busy, try again later.\n"))
+				conn.Close()
+			}
+		}
+		这个版本的一个重大问题， select 结构看似在检查信号，但逻辑是这样的：
+			循环开始，select 检查 sigChan —— 没信号
+			进入 default 分支，执行 listener.Accept()
+			Accept() 阻塞了！ 程序卡在这里等待新连接，无法回到 select 重新检查信号
+			你按 Ctrl+C，信号被操作系统发送给 sigChan，但代码还在第 3 步卡着，无法执行
+			直到有新连接进来（或出错），Accept() 返回，代码才回到循环开头，发现 sigChan 有信号
+		所以这个版本的代码实际上是无法优雅退出的，学到了一切阻塞的东西都要放到 goroutine 里面去做这个教训
+		
+	0.3版本：
+		还是需要goroutine,部分回滚到0.1,但是尝试自己设计，不依赖LLM
+	*/
