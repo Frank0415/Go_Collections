@@ -1,12 +1,14 @@
 package tcp
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 )
 
@@ -26,6 +28,9 @@ func bindPort(port int) (*net.TCPListener, error) {
 }
 
 func StartTCPServer() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
@@ -37,6 +42,8 @@ func StartTCPServer() {
 
 	sem := make(chan struct{}, 100)
 	var wg sync.WaitGroup
+	var connID atomic.Int32
+	connID.Store(0)
 
 	go func() {
 		for {
@@ -56,12 +63,12 @@ func StartTCPServer() {
 				go func() {
 					defer func() { <-sem }()
 					defer wg.Done()
-					handleTCPConnection(conn)
+					connID.Add(1)
+					handleTCPConnection(conn, ctx, connID.Load())
 				}()
 			default:
 				conn.Write([]byte("Server busy, try again later.\n"))
 				conn.Close()
-
 			}
 		}
 	}()
@@ -70,6 +77,7 @@ func StartTCPServer() {
 	<-sigChan
 	log.Println("Shutting down TCP server, waiting all connections to close.")
 	listener.Close()
+	cancel()  // cancel the context to notify all goroutines (if they are using it)
 	wg.Wait() // the main goroutine will need to wait for all connection goroutines to finish
 	log.Println("All connections closed, TCP server exited.")
 }
