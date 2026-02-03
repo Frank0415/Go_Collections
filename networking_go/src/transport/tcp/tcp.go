@@ -12,6 +12,27 @@ import (
 	"syscall"
 )
 
+type Handler interface {
+	ServeTCP(conn net.Conn, ctx context.Context, connID int32)
+}
+
+type Server struct {
+	handler  *Handler
+	port     int
+	maxConns int
+}
+
+func NewServer(handler *Handler, port int, maxConns int) *Server {
+	if handler == nil || port <= 0 || maxConns <= 0 || maxConns > 10000 || port > 65535 {
+		log.Fatal("Invalid parameters to create TCP server.")
+	}
+	return &Server{
+		handler:  handler,
+		port:     port,
+		maxConns: maxConns,
+	}
+} // After this we assume the server is valid
+
 func bindPort(port int) (*net.TCPListener, error) {
 	for currPort := port; currPort < port+100; currPort++ {
 		addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf(":%d", currPort))
@@ -27,20 +48,20 @@ func bindPort(port int) (*net.TCPListener, error) {
 	return nil, fmt.Errorf("could not bind to any port in range %d-%d", port, port+99)
 }
 
-func StartTCPServer() {
+func StartServer(server *Server) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	listener, err := bindPort(10000)
+	listener, err := bindPort(server.port)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer listener.Close()
 
-	sem := make(chan struct{}, 100)
+	sem := make(chan struct{}, server.maxConns)
 	var wg sync.WaitGroup
 	var connID atomic.Int32
 	connID.Store(0)
@@ -64,7 +85,7 @@ func StartTCPServer() {
 					defer func() { <-sem }()
 					defer wg.Done()
 					connID.Add(1)
-					handleTCPConnection(conn, ctx, connID.Load())
+					(*server.handler).ServeTCP(conn, ctx, connID.Load())
 				}()
 			default:
 				conn.Write([]byte("Server busy, try again later.\n"))

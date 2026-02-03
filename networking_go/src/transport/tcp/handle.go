@@ -16,7 +16,8 @@ func handleTCPConnection(conn net.Conn, ctx context.Context, connID int32) {
 
 	var mainBuf []byte
 	buf := make([]byte, 1024)
-
+	const timeLimitSeconds = 20
+	var remainingTime int = timeLimitSeconds
 	for {
 		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		n, err := conn.Read(buf)
@@ -29,7 +30,13 @@ func handleTCPConnection(conn net.Conn, ctx context.Context, connID int32) {
 					log.Println("Context cancelled, closing connection, connID:", connID)
 					conn.Write([]byte("connection closing, connID: " + fmt.Sprint(connID) + "\n"))
 				default:
-					continue
+					if remainingTime <= 0 {
+						conn.Write([]byte("Deadline met, connection closing, connID: " + fmt.Sprint(connID) + "\n"))
+						return
+					} else {
+						remainingTime -= 1
+						continue
+					}
 				}
 			} else if errors.As(err, &opErr) {
 				log.Println("Received stopping signal, closing connID:", connID)
@@ -45,6 +52,8 @@ func handleTCPConnection(conn net.Conn, ctx context.Context, connID int32) {
 				log.Printf("Connection Closed with remaining %q", mainBuf)
 			}
 			return
+		}else{
+			remainingTime = timeLimitSeconds
 		}
 
 		log.Printf("Received data: %s", string(buf[:n]))
