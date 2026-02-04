@@ -2,6 +2,7 @@ package tcp_server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -50,7 +51,7 @@ func StartTCPServer() {
 			conn, err := listener.Accept()
 			if err != nil {
 				// 如果是关闭了 listener 导致的报错，说明是正常退出
-				if opErr, ok := err.(*net.OpError); ok && opErr.Op == "accept" {
+				if errors.Is(err, net.ErrClosed) {
 					return
 				} else {
 					log.Println("Accept error:", err)
@@ -63,8 +64,8 @@ func StartTCPServer() {
 				go func() {
 					defer func() { <-sem }()
 					defer wg.Done()
-					connID.Add(1)
-					handleTCPConnection(conn, ctx, connID.Load())
+					id := connID.Add(1)
+					handleTCPConnection(conn, ctx, id)
 				}()
 			default:
 				conn.Write([]byte("Server busy, try again later.\n"))
